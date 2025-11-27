@@ -66,7 +66,7 @@ export function RoleSelection({ onRoleSelect, onShowRanking }: RoleSelectionProp
             const feRole = mapRole(beUser.role);
 
             if (!feRole) {
-                 throw new Error("할당된 역할이 유효하지 않습니다: " + beUser.role);
+                throw new Error("할당된 역할이 유효하지 않습니다: " + beUser.role);
             }
             
             // 3. DB에서 가져온 역할과 사용자가 선택한 역할이 일치하는지 확인

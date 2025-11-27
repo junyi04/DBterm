@@ -7,5 +7,6 @@ import java.util.Optional;
 
 // 3. 사건 참여 리포지토리
 public interface CaseParticipationRepository extends CrudRepository<CaseParticipation, Long> {
+    List<CaseParticipation> findAllByClientId(Long clientId);
     Optional<CaseParticipation> findByCaseId(Long caseId);
 }

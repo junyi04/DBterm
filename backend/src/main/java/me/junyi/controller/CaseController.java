@@ -107,4 +107,59 @@ public class CaseController {
         return caseService.getCasesByCulpritId(userId); // 🚨 CaseService에 구현 필요
     }
 
+    // 10. 의뢰인 - 사건 의뢰 시작
+    @PostMapping("/start")
+    public ResponseEntity<?> startCase(@RequestBody Map<String, Long> request) {
+        Long caseId = request.get("caseId");
+        Long clientId = request.get("clientId");
+
+        if (caseId == null || clientId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Case ID와 Client ID는 필수입니다."));
+        }
+
+        try {
+            caseService.startCaseByClient(caseId, clientId);
+            return ResponseEntity.ok(Map.of("message", "사건 의뢰가 성공적으로 시작되었습니다."));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "사건 의뢰 중 DB 오류: " + e.getMessage()));
+        }
+    }
+
+    // 11. 범인 - 사건 참여 시작
+// URL: POST /api/cases/culprit/join
+    @PostMapping("/culprit/join")
+    public ResponseEntity<?> joinCaseAsCulprit(@RequestBody Map<String, Long> request) {
+        Long caseId = request.get("caseId");
+        Long culpritId = request.get("culpritId");
+
+        if (caseId == null || culpritId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Case ID와 Culprit ID는 필수입니다."));
+        }
+
+        try {
+            caseService.handleJoinCulprit(caseId, culpritId);
+            return ResponseEntity.ok(Map.of("message", "범인으로 사건에 참여했습니다."));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "참여 중 DB 오류: " + e.getMessage()));
+        }
+    }
+
+    // 🚨 [추가됨] 12. 범인 - 증거 조작용 사건 상세 및 증거 목록 조회 (FakeEvidenceModal용)
+    // URL: GET /api/cases/culprit/fabricate/details/{caseId}
+    @GetMapping("/culprit/fabricate/details/{caseId}")
+    public ResponseEntity<?> getFabricationDetails(@PathVariable Long caseId) {
+        try {
+            // CaseService에 새로운 DTO 반환 메서드를 호출해야 함
+            Map<String, Object> details = caseService.getEvidenceDetailsForFabrication(caseId);
+            return ResponseEntity.ok(details);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "증거 상세 로딩 중 오류: " + e.getMessage()));
+        }
+    }
 }

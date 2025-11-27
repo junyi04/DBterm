@@ -225,6 +225,7 @@ export function DetectiveDashboard({ user, onLogout, onShowRanking }: DetectiveD
                 <CaseResultModal
                     caseData={{
                         activeId: viewResultCase.activeId,
+                        caseId: viewResultCase.caseId,
                         caseTitle: viewResultCase.caseTitle,
                         caseDescription: viewResultCase.caseDescription,
                         culpritGuess: viewResultCase.culpritGuess,

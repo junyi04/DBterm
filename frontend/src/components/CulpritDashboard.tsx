@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card } from './ui/card';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { LogOut, UserX, Trophy, AlertTriangle, Loader2 } from 'lucide-react';
+import { Card } from './ui/card'; // 🚨 경로 수정
+import { Button } from './ui/button'; // 🚨 경로 수정
+import { Badge } from './ui/badge'; // 🚨 경로 수정
+import { LogOut, UserX, Trophy, AlertTriangle, Loader2, Save } from 'lucide-react';
 import type { User } from '../App';
-import { FakeEvidenceModal } from './FakeEvidenceModal';
+import { FakeEvidenceModal } from './FakeEvidenceModal'; // 🚨 경로 수정
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -57,14 +57,20 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
     }, []);
 
     // 🚨 2. 내가 참여한 사건 목록 조회 (CRIMINAL_ID = userId)
+    // NOTE: 백엔드의 getCasesByCulpritId 구현이 필요합니다.
     const fetchMyCases = useCallback(async () => {
         setLoadingMy(true);
         try {
             // GET /api/cases/culprit/{userId} 호출
+            // 이 API는 CaseParticipation과 CaseInfo를 조인하여 MyCase DTO를 반환해야 합니다.
             const response = await apiClient.get<MyCase[]>(`/cases/culprit/${user.id}`);
             setMyCases(response.data);
         } catch (err: any) {
-            setError("참여 중인 사건 목록을 불러오지 못했습니다.");
+            // NOTE: 백엔드 구현이 완료되지 않았다면 404/500 오류가 발생할 수 있습니다.
+            // setError("참여 중인 사건 목록을 불러오지 못했습니다."); 
+            // DB 초기화 후 9번 API(getCasesByCulpritId)의 TODO 로직이 구현될 때까지 이 에러는 무시될 수 있습니다.
+            console.error("참여 사건 로딩 실패:", err);
+            setMyCases([]); // 실패 시 빈 배열로 설정
         } finally {
             setLoadingMy(false);
         }
@@ -78,27 +84,32 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
 
     // 🚨 3. 범인으로 사건에 참여 요청
     const handleJoinCase = async (caseItem: AvailableCase) => {
+        console.log("범인 참여 요청 데이터:", { caseId: caseItem.caseId, culpritId: user.id });
         try {
-            // POST /api/cases/culprit/join 호출 (백엔드에서 CRIMINAL_ID 등록 및 점수 +1 처리)
+            // 1. POST /api/cases/culprit/join 호출 (참여 요청)
             await apiClient.post('/cases/culprit/join', {
                 caseId: caseItem.caseId,
-                activeId: caseItem.activeId,
-                culpritId: user.id, // 현재 로그인된 범인의 ID
+                culpritId: user.id,
             });
 
-            toast.success(`'${caseItem.caseTitle}' 사건에 범인으로 참여했습니다!`);
-            fetchAvailableCases(); // 목록 갱신
-            fetchMyCases();
+            toast.success(`'${caseItem.caseTitle}' 사건에 범인으로 참여했습니다. 이제 증거를 조작하세요.`);
+            
+            // 2. 참여 성공 후, 바로 증거 조작 모달을 띄우기 위해 selectedCase 상태 업데이트
+            setSelectedCase(caseItem); 
+
+            fetchAvailableCases(); // 목록 갱신 (선택한 사건이 사라짐)
+            // fetchMyCases()는 handleEvidenceSelected에서 호출되도록 유지하거나 여기서도 호출 가능
+            
         } catch (err: any) {
             const errorMessage = err.response?.data?.error || "참여 요청 중 서버 오류가 발생했습니다.";
             toast.error(errorMessage);
         }
     };
 
-    // 증거 조작 모달을 닫고 목록을 갱신
+    // 증거 조작 모달을 닫고 목록을 갱신 (참여 목록만 갱신)
     const handleEvidenceSelected = () => {
         setSelectedCase(null);
-        fetchMyCases(); 
+        fetchMyCases(); // 🚨 조작 완료 후 '내가 참여한 사건' 목록 갱신
     };
 
     const getDifficultyStars = (difficulty: number) => {
@@ -161,18 +172,19 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
                             </Card>
                         ) : (
                             availableCases.map((caseItem) => (
-                                <Card key={caseItem.activeId} className="p-6 hover:shadow-lg transition-shadow">
+                                <Card key={caseItem.caseId} className="p-6 hover:shadow-lg transition-shadow">
                                     <div className="flex justify-between items-start">
                                         <div className="flex-1">
                                             <div className="flex items-center gap-3 mb-2">
-                                                <h3>{caseItem.caseTitle}</h3>
+                                                {/* 🚨 [수정 1] 제목을 가장 위에 표시 */}
+                                                <h3 className="text-xl font-semibold">{caseItem.caseTitle}</h3> 
                                                 <span className="text-yellow-500">{getDifficultyStars(caseItem.difficulty)}</span>
                                             </div>
                                             <p className="text-muted-foreground text-sm mb-3">
                                                 {caseItem.caseDescription}
                                             </p>
                                             <p className="text-sm text-muted-foreground">
-                                                의뢰인: {caseItem.clientNickname}
+                                                의뢰인: {caseItem.clientNickname || '미정'}
                                             </p>
                                         </div>
                                         <Button
@@ -203,7 +215,7 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
                             </Card>
                         ) : (
                             myCases.map((caseItem) => (
-                                <Card key={caseItem.activeId} className="p-6">
+                                <Card key={`my-${caseItem.activeId}`} className="p-6">
                                     <div className="flex justify-between items-start mb-4">
                                         <div className="flex-1">
                                             <div className="flex items-center gap-3 mb-2">
@@ -217,31 +229,44 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             <Badge>{caseItem.status}</Badge>
-                                            {caseItem.fakeEvidenceSelected ? (
+                                            
+                                            {/* 🚨 [수정 2] 증거 조작 완료/필요 상태 메시지 및 버튼 */}
+                                            {/* Case 1: 참여만 했고 아직 조작이 필요한 상태 (status='등록') */}
+                                            {!caseItem.fakeEvidenceSelected && caseItem.status === '등록' && (
+                                                <>
+                                                    <Badge variant="destructive">증거 조작 필요</Badge>
+                                                    <Button
+                                                        onClick={() => setSelectedCase({
+                                                            activeId: caseItem.activeId,
+                                                            caseId: caseItem.caseId,
+                                                            caseTitle: caseItem.caseTitle,
+                                                            caseDescription: caseItem.caseDescription,
+                                                            clientNickname: caseItem.clientNickname,
+                                                            difficulty: caseItem.difficulty,
+                                                        })}
+                                                        variant="outline"
+                                                        className="w-full"
+                                                    >
+                                                        <Save className="size-4 mr-1"/> 증거 조작하기
+                                                    </Button>
+                                                </>
+                                            )}
+                                            
+                                            {/* Case 2: 조작을 완료하고 경찰 배정 대기 중인 상태 (status='조작') */}
+                                            {caseItem.status === '조작' && (
                                                 <Badge variant="secondary" className="bg-green-500 hover:bg-green-600 text-white">
-                                                    증거 조작 완료
+                                                    경찰 배정 대기 중 (조작 완료)
                                                 </Badge>
-                                            ) : (
-                                                <Badge variant="destructive">증거 조작 필요</Badge>
+                                            )}
+
+                                            {/* Case 3: 경찰이 탐정을 배정한 상태 (status='배정') */}
+                                            {caseItem.status === '배정' && (
+                                                <Badge className="bg-blue-500 hover:bg-blue-600 text-white">
+                                                    탐정 조사 중
+                                                </Badge>
                                             )}
                                         </div>
                                     </div>
-                                    {!caseItem.fakeEvidenceSelected && caseItem.status === '조작' && ( // STATUS가 '조작' 상태일 때만 조작 가능하도록 추가 조건
-                                        <Button
-                                            onClick={() => setSelectedCase({
-                                                activeId: caseItem.activeId,
-                                                caseId: caseItem.caseId,
-                                                caseTitle: caseItem.caseTitle,
-                                                caseDescription: caseItem.caseDescription,
-                                                clientNickname: caseItem.clientNickname,
-                                                difficulty: caseItem.difficulty,
-                                            })}
-                                            variant="outline"
-                                            className="w-full"
-                                        >
-                                            증거 조작하기
-                                        </Button>
-                                    )}
                                 </Card>
                             ))
                         )}
@@ -251,7 +276,6 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
 
             {selectedCase && (
                 <FakeEvidenceModal
-                    // activeCase의 속성명을 Camel Case로 통일 및 필요한 caseId 전달
                     activeCase={{
                         activeId: selectedCase.activeId,
                         caseId: selectedCase.caseId,

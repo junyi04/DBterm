@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.Map; // Map 추가
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -76,11 +77,12 @@ public class CaseService {
 
         submittedEvidenceRepository.deleteAll(submittedEvidenceRepository.findAllByCaseId(caseId));
 
+        // SubmittedEvidence 도메인 객체가 없으므로, 편의상 OriginalEvidence의 getIsTrue()를 사용한다고 가정
         List<SubmittedEvidence> submittedList = trueEvidences.stream()
-                .map(e -> new SubmittedEvidence(null, e.getCaseId(), e.getDescription(), e.getIsTrue()))
+                .map(e -> new SubmittedEvidence(null, e.getCaseId(), e.getDescription(), true)) // 진짜 증거는 TRUE로 설정
                 .collect(Collectors.toList());
 
-        submittedList.add(new SubmittedEvidence(null, selectedFake.getCaseId(), selectedFake.getDescription(), selectedFake.getIsTrue()));
+        submittedList.add(new SubmittedEvidence(null, selectedFake.getCaseId(), selectedFake.getDescription(), false)); // 거짓 증거는 FALSE로 설정
 
         submittedEvidenceRepository.saveAll(submittedList);
 
@@ -139,25 +141,145 @@ public class CaseService {
         return List.of(); // 임시 반환
     }
 
-    // 6. 의뢰인 - 의뢰한 사건 조회
+    /** 6. 의뢰인 - 의뢰한 사건 조회 */
     public List<CaseClientDto> getCasesByClientId(Long clientId) {
-        // TODO: CaseParticipation과 CaseInfo를 조인하여 clientId가 일치하는 사건을 CaseClientDto로 변환하는 로직 구현 필요
-        return List.of(); // 임시 반환
+        // 1. clientId로 CaseParticipation 목록 조회
+        List<CaseParticipation> participations = participationRepository.findAllByClientId(clientId);
+
+        // 2. 각 participation의 caseId를 사용하여 CaseInfo 조회 및 DTO 변환
+        return participations.stream()
+                .map(p -> {
+                    Optional<CaseInfo> caseInfoOpt = caseInfoRepository.findById(p.getCaseId());
+                    return caseInfoOpt.map(info -> {
+                        // CaseInfo와 CaseParticipation의 데이터를 CaseClientDto로 조합
+                        String status = info.getStatus();
+                        String result = null; // CaseClientDto에 따라 CaseResult 도메인이 있다면 추가 조회가 필요함
+
+                        if ("결과 확인".equals(status)) {
+                            result = p.getIsSolved() != null ? (p.getIsSolved() ? "감사" : "부고") : "미정";
+                        }
+
+                        // 탐정 닉네임 조회 (DetectiveId가 있는 경우)
+                        String detectiveNickname = (p.getDetectiveId() != null) ?
+                                appUserRepository.findById(p.getDetectiveId()).map(AppUser::getNickname).orElse("미배정") : "미배정";
+
+                        return CaseClientDto.builder()
+                                .caseId(info.getCaseId())
+                                .activeId(p.getPartId()) // 활성화된 참여 정보 ID (프론트엔드 key)
+                                .caseTitle(info.getTitle())
+                                .caseDescription(info.getContent())
+                                .difficulty(info.getDifficulty())
+                                .detectiveNickname(detectiveNickname)
+                                .status(status)
+                                .result(result)
+                                .build();
+                    }).orElse(null);
+                })
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
-    // 7. 경찰 - 탐정 배정 대기 중인 사건 조회 (STATUS='조작')
+    /** 7. 경찰 - 탐정 배정 대기 중인 사건 조회 (STATUS='조작') */
     public List<CaseInfo> getPendingCasesForPolice() {
         return caseInfoRepository.findAllByStatus("조작"); // STATUS가 '조작'인 사건 반환
     }
 
-    // 8. 범인 - 조작 참여 가능 사건 조회 (STATUS='등록')
+    /** 8. 범인 - 조작 참여 가능 사건 조회 (STATUS='등록') */
     public List<CaseInfo> getAvailableCasesForCulprit() {
-        return caseInfoRepository.findAllByStatus("등록"); // STATUS가 '등록'인 사건 반환
+        // 🚨 [JdbcTemplate을 사용한 VIEW 조회로 수정]
+        String sql = "SELECT * FROM available_cases_for_culprit";
+
+        // JdbcTemplate을 사용하여 뷰에서 CaseInfo 객체 리스트를 가져옵니다.
+        // CaseInfo의 필드와 칼럼 이름이 정확히 일치해야 합니다.
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            CaseInfo info = new CaseInfo();
+            info.setCaseId(rs.getLong("case_id"));
+            info.setTitle(rs.getString("title"));
+            info.setContent(rs.getString("content"));
+            info.setDifficulty(rs.getInt("difficulty"));
+            info.setStatus(rs.getString("status"));
+            // true_criminal_id는 NULL 허용이므로 rs.getObject()나 적절한 NULL 체크가 필요할 수 있습니다.
+            if (rs.getObject("true_criminal_id") != null) {
+                info.setTrueCriminalId(rs.getLong("true_criminal_id"));
+            } else {
+                info.setTrueCriminalId(null);
+            }
+            return info;
+        });
     }
 
     // 9. 범인 - 참여한 사건 조회
     public List<CaseInfo> getCasesByCulpritId(Long culpritId) {
         // TODO: CaseParticipation과 CaseInfo를 조인하여 culpritId가 일치하는 사건을 CaseInfo로 반환하는 로직 구현 필요
         return List.of(); // 임시 반환
+    }
+
+    /** 10. 의뢰인 - 사건 의뢰 처리 (CaseParticipation 생성) */
+    @Transactional
+    public CaseInfo startCaseByClient(Long caseId, Long clientId) {
+        // 1. CaseInfo 상태 확인 및 유효성 검사 (STATUS='등록' 상태의 사건만 의뢰 가능)
+        CaseInfo caseInfo = caseInfoRepository.findById(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("사건을 찾을 수 없습니다."));
+
+        if (!"등록".equals(caseInfo.getStatus())) {
+            throw new IllegalStateException("이미 의뢰가 진행 중이거나 마감된 사건입니다.");
+        }
+
+        // 2. CaseParticipation 생성 및 저장 (clientId만 설정)
+        CaseParticipation newParticipation = CaseParticipation.builder()
+                .caseId(caseId)
+                .clientId(clientId)
+                .build();
+        participationRepository.save(newParticipation);
+
+        // 3. (옵션) 의뢰 시점에서 CaseInfo의 상태를 변경할 수도 있지만,
+        //    대부분의 경우 '등록' 상태를 유지하고 범인/경찰 액션 시점에 상태가 변경됩니다.
+        //    여기서는 상태 변경 없이 CaseInfo를 반환합니다.
+        return caseInfo;
+    }
+
+    /** 11. 범인 - 사건 참여 처리 (CRIMINAL_ID 등록 및 점수 +1) */
+    @Transactional
+    public CaseInfo handleJoinCulprit(Long caseId, Long culpritId) {
+        // 1. 참여 정보 업데이트 (CRIMINAL_ID 등록 및 점수 +1)
+        CaseParticipation participation = participationRepository.findByCaseId(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("참여 레코드를 찾을 수 없습니다."));
+
+        // 🚨 이미 범인이 지정된 경우 방지
+        if (participation.getCriminalId() != null) {
+            throw new IllegalStateException("이미 범인이 참여한 사건입니다.");
+        }
+
+        participation.setCriminalId(culpritId);
+        participationRepository.save(participation);
+
+        // 2. 범인 점수 +1 업데이트 및 로그 기록 (재사용 가능한 updateUserScore 헬퍼 메서드 사용)
+        updateUserScore(culpritId, 1, caseId, "범인 참여 (초기 점수)");
+
+        // 3. CaseInfo 상태 확인 (STATUS='등록' 상태를 유지. 범인 조작 후 '조작'으로 변경됨)
+        CaseInfo caseInfo = caseInfoRepository.findById(caseId).orElseThrow();
+
+        // 상태는 아직 '등록'을 유지하며, 증거 조작 완료 후 '조작'으로 변경됩니다.
+        // caseInfo.setStatus("조작"); // 🚨 조작 완료 시점에 변경되므로 여기서는 변경하지 않습니다.
+
+        return caseInfo;
+    }
+
+    // 🚨 [추가됨] 12. 범인 - 증거 조작용 사건 상세 및 증거 목록 조회
+    @Transactional(readOnly = true)
+    public Map<String, Object> getEvidenceDetailsForFabrication(Long caseId) {
+        // A. CaseInfo 조회
+        CaseInfo caseInfo = caseInfoRepository.findById(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("사건을 찾을 수 없습니다."));
+
+        // B. OriginalEvidence 전체 목록 조회 (진짜 + 거짓 후보 모두 포함)
+        List<OriginalEvidence> allEvidences = originalEvidenceRepository.findAllByCaseId(caseId);
+
+        // C. 결과를 Map으로 구성하여 반환 (프론트엔드 기대 구조와 일치)
+        return Map.of(
+                "caseTitle", caseInfo.getTitle(),
+                "caseDescription", caseInfo.getContent(),
+                "originalEvidences", allEvidences
+        );
     }
 }

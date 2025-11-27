@@ -1,153 +1,165 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { X, FileText } from 'lucide-react';
+import { X, FileText, Loader2 } from 'lucide-react'; // 🚨 Loader2 추가
+import axios from 'axios'; // 🚨 axios 추가
+import { toast } from 'sonner'; // 🚨 toast 추가
+
+const apiClient = axios.create({ baseURL: '/api', withCredentials: true });
 
 interface CaseSelectionModalProps {
-  userId: number;
-  onClose: () => void;
-  onCaseSelected: () => void;
+    userId: number;
+    onClose: () => void;
+    onCaseSelected: () => void;
 }
 
+// 🚨 Case 인터페이스 수정 (카멜 케이스 통일)
 interface Case {
-  case_id: number;
-  title: string;
-  description: string;
-  difficulty: number;
+    caseId: number; // case_id -> caseId
+    title: string;
+    description: string;
+    difficulty: number;
 }
 
 export function CaseSelectionModal({ userId, onClose, onCaseSelected }: CaseSelectionModalProps) {
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+    const [cases, setCases] = useState<Case[]>([]);
+    const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+    const [loading, setLoading] = useState(true); // 🚨 로딩 상태
+    const [submitting, setSubmitting] = useState(false); // 🚨 제출 상태
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchCases();
-  }, []);
+    // 🚨 1. 사건 목록 조회 API 연동 (STATUS='등록' 상태의 사건)
+    const fetchCases = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            // GET /api/cases/available 호출
+            const response = await apiClient.get<Case[]>('/cases/available');
+            setCases(response.data);
+        } catch (err: any) {
+            setError("의뢰 가능한 사건 목록을 불러오지 못했습니다.");
+            toast.error("사건 목록 로드 실패!");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-  const fetchCases = async () => {
-    // TODO: Replace with your actual API endpoint
-    // const response = await fetch('YOUR_API_URL/cases');
-    // const data = await response.json();
-    // setCases(data);
+    useEffect(() => {
+        fetchCases();
+    }, [fetchCases]);
 
-    // Mock data
-    const mockCases: Case[] = [
-      {
-        case_id: 1,
-        title: '밀실 살인 사건',
-        description: '호텔의 밀실에서 시체가 발견되었다. 창문과 문은 모두 안에서 잠겨있었고, 범인의 흔적은 찾을 수 없었다.',
-        difficulty: 5,
-      },
-      {
-        case_id: 2,
-        title: '보석 도난 사건',
-        description: '박물관에서 귀중한 보석이 사라졌다. CCTV에는 아무것도 찍히지 않았고, 보안 시스템도 정상 작동했다.',
-        difficulty: 2,
-      },
-      {
-        case_id: 3,
-        title: '독살 사건',
-        description: '만찬회에서 한 손님이 갑자기 쓰러졌다. 부검 결과 독극물이 검출되었지만, 누가 어떻게 투여했는지 알 수 없다.',
-        difficulty: 4,
-      },
-      {
-        case_id: 4,
-        title: '알리바이 트릭',
-        description: '살인 사건이 발생했지만, 모든 용의자에게 완벽한 알리바이가 있다. 하지만 범인은 분명 그 중 한 명이다.',
-        difficulty: 3,
-      },
-      {
-        case_id: 5,
-        title: '연쇄 절도 사건',
-        description: '비슷한 수법으로 연쇄 절도가 발생했다. 범인은 항상 귀중품만 정확히 찾아가고, 흔적을 남기지 않는다.',
-        difficulty: 1,
-      },
-    ];
-    setCases(mockCases);
-  };
+    // 🚨 2. 사건 의뢰 제출 API 연동
+    const handleSubmit = async () => {
+        if (!selectedCase || submitting) return;
 
-  const handleSubmit = async () => {
-    if (!selectedCase) return;
+        setSubmitting(true);
+        setError(null);
 
-    // TODO: Replace with your actual API endpoint
-    // await fetch('YOUR_API_URL/active_cases', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     case_id: selectedCase.case_id,
-    //     client_id: userId
-    //   })
-    // });
+        try {
+            // POST /api/case/start 호출
+            const response = await apiClient.post('/case/start', {
+                caseId: selectedCase.caseId, // 카멜 케이스 사용
+                clientId: userId
+            });
 
-    onCaseSelected();
-  };
+            toast.success(`'${selectedCase.title}' 사건 의뢰가 시작되었습니다.`);
+            
+            // 🚨 성공 시 대시보드 갱신 및 모달 닫기
+            onCaseSelected(); 
+            onClose();
 
-  const getDifficultyStars = (difficulty: number) => {
-    return '⭐'.repeat(difficulty);
-  };
+        } catch (err: any) {
+            const errorMessage = err.response?.data?.error || "사건 의뢰 중 오류가 발생했습니다.";
+            setError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
-  const getDifficultyLabel = (difficulty: number) => {
-    const labels = ['매우 쉬움', '쉬움', '보통', '어려움', '매우 어려움'];
-    return labels[difficulty - 1] || '보통';
-  };
+    const getDifficultyStars = (difficulty: number) => {
+        return '⭐'.repeat(difficulty);
+    };
 
-  const getDifficultyColor = (difficulty: number) => {
-    if (difficulty <= 2) return 'bg-green-500';
-    if (difficulty <= 3) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
+    const getDifficultyLabel = (difficulty: number) => {
+        const labels = ['매우 쉬움', '쉬움', '보통', '어려움', '매우 어려움'];
+        return labels[difficulty - 1] || '보통';
+    };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b p-6 flex justify-between items-center">
-          <div>
-            <h2 className="mb-1">사건 선택</h2>
-            <p className="text-sm text-muted-foreground">의뢰할 사건을 선택하세요</p>
-          </div>
-          <Button onClick={onClose} variant="ghost" size="sm">
-            <X className="size-4" />
-          </Button>
-        </div>
+    const getDifficultyColor = (difficulty: number) => {
+        if (difficulty <= 2) return 'bg-green-500';
+        if (difficulty <= 3) return 'bg-yellow-500';
+        return 'bg-red-500';
+    };
 
-        <div className="p-6 space-y-4">
-          {cases.map((caseItem) => (
-            <Card
-              key={caseItem.case_id}
-              className={`p-4 cursor-pointer transition-all hover:shadow-lg ${
-                selectedCase?.case_id === caseItem.case_id
-                  ? 'ring-2 ring-blue-500 bg-blue-50'
-                  : 'hover:bg-gray-50'
-              }`}
-              onClick={() => setSelectedCase(caseItem)}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-3">
-                  <FileText className="size-5 text-blue-500" />
-                  <h3>{caseItem.title}</h3>
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                <div className="sticky top-0 bg-white border-b p-6 flex justify-between items-center z-10">
+                    <div>
+                        <h2 className="mb-1">사건 선택</h2>
+                        <p className="text-sm text-muted-foreground">의뢰할 사건을 선택하세요</p>
+                    </div>
+                    <Button onClick={onClose} variant="ghost" size="sm" disabled={submitting}>
+                        <X className="size-4" />
+                    </Button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={`${getDifficultyColor(caseItem.difficulty)} hover:opacity-90`}>
-                    {getDifficultyLabel(caseItem.difficulty)}
-                  </Badge>
-                  <span className="text-yellow-500">{getDifficultyStars(caseItem.difficulty)}</span>
+
+                <div className="p-6 space-y-4">
+                    {loading ? (
+                        <div className="flex justify-center items-center h-40 text-blue-500">
+                            <Loader2 className="animate-spin size-6 mr-2" /> 사건 목록 로딩 중...
+                        </div>
+                    ) : error ? (
+                        <div className="text-center text-red-500 p-4 border border-red-300 rounded">{error}</div>
+                    ) : cases.length === 0 ? (
+                        <div className="text-center text-muted-foreground p-4">현재 의뢰 가능한 사건이 없습니다.</div>
+                    ) : (
+                        cases.map((caseItem) => (
+                            <Card
+                                key={caseItem.caseId} // 🚨 case_id -> caseId
+                                className={`p-4 cursor-pointer transition-all hover:shadow-lg ${
+                                    selectedCase?.caseId === caseItem.caseId // 🚨 case_id -> caseId
+                                        ? 'ring-2 ring-blue-500 bg-blue-50'
+                                        : 'hover:bg-gray-50'
+                                }`}
+                                onClick={() => setSelectedCase(caseItem)}
+                            >
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <FileText className="size-5 text-blue-500" />
+                                        <h3>{caseItem.title}</h3>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Badge className={`${getDifficultyColor(caseItem.difficulty)} hover:opacity-90`}>
+                                            {getDifficultyLabel(caseItem.difficulty)}
+                                        </Badge>
+                                        <span className="text-yellow-500">{getDifficultyStars(caseItem.difficulty)}</span>
+                                    </div>
+                                </div>
+                                <p className="text-sm text-muted-foreground">{caseItem.description}</p>
+                            </Card>
+                        ))
+                    )}
                 </div>
-              </div>
-              <p className="text-sm text-muted-foreground">{caseItem.description}</p>
+
+                <div className="sticky bottom-0 bg-white border-t p-6 flex justify-end gap-3">
+                    <Button onClick={onClose} variant="outline" disabled={submitting}>
+                        취소
+                    </Button>
+                    <Button 
+                        onClick={handleSubmit} 
+                        disabled={!selectedCase || submitting}
+                    >
+                        {submitting ? (
+                            <><Loader2 className="size-4 mr-2 animate-spin" /> 의뢰 중</>
+                        ) : (
+                            '사건 의뢰하기'
+                        )}
+                    </Button>
+                </div>
             </Card>
-          ))}
         </div>
-
-        <div className="sticky bottom-0 bg-white border-t p-6 flex justify-end gap-3">
-          <Button onClick={onClose} variant="outline">
-            취소
-          </Button>
-          <Button onClick={handleSubmit} disabled={!selectedCase}>
-            사건 의뢰하기
-          </Button>
-        </div>
-      </Card>
-    </div>
-  );
+    );
 }
