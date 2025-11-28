@@ -9,7 +9,7 @@ const apiClient = axios.create({ baseURL: '/api', withCredentials: true });
 
 // 🚨 백엔드 OriginalEvidence 도메인에 대응하는 인터페이스
 interface Evidence {
-    id: number;
+    evidenceId: number;
     caseId: number;
     description: string;
     isFakeCandidate: boolean; // 거짓 증거 후보 여부
@@ -36,7 +36,7 @@ export function FakeEvidenceModal({ activeCase, userId, onClose, onEvidenceSelec
     const [evidences, setEvidences] = useState<Evidence[]>([]);
     const [selectedFakeEvidence, setSelectedFakeEvidence] = useState<Evidence | null>(null);
     const [error, setError] = useState<string | null>(null);
-    
+
     // 🚨 [추가] API에서 받은 사건 제목/내용을 저장할 상태
     const [caseData, setCaseData] = useState({ title: activeCase.caseTitle, description: activeCase.caseDescription });
 
@@ -51,6 +51,8 @@ export function FakeEvidenceModal({ activeCase, userId, onClose, onEvidenceSelec
                 caseDescription: string;
                 originalEvidences: Evidence[];
             }>(`/cases/culprit/fabricate/details/${activeCase.caseId}`);
+            console.log("🔥 RAW API RESPONSE:", response.data);
+            console.log("🔥 RAW originalEvidences:", response.data.originalEvidences);
 
             // 🚨 [수정 1] API 응답에서 받은 정확한 제목/내용으로 Header 업데이트
             setCaseData({
@@ -89,18 +91,25 @@ export function FakeEvidenceModal({ activeCase, userId, onClose, onEvidenceSelec
         }
 
         setSubmitting(true);
+
         try {
-            // POST /api/cases/fabricate 호출 (백엔드 2번 로직)
+            // 1) 여기서 범인 참여 확정
+            await apiClient.post('/cases/culprit/join', {
+                caseId: activeCase.caseId,
+                culpritId: userId,
+            });
+
+            // 2) 조작 API 호출
             await apiClient.post('/cases/fabricate', {
                 caseId: activeCase.caseId,
                 criminalId: userId,
-                // 백엔드가 description을 찾도록 설계되어 있으므로 그대로 전달
-                fakeEvidence: selectedFakeEvidence.description 
+                fakeEvidence: [selectedFakeEvidence.description]
             });
 
-            toast.success(`'${caseData.title}' 사건의 증거 조작이 완료되었습니다. 사건이 경찰에 배정 대기 중입니다.`);
-            onEvidenceSelected(); // 대시보드 갱신
-            onClose();
+            toast.success(`'${caseData.title}' 사건이 조작되었습니다.`);
+
+            onEvidenceSelected(); // 부모 대시보드 갱신
+            onClose();            // 모달 닫기
 
         } catch (err: any) {
             const errorMessage = err.response?.data?.error || "증거 조작 중 오류가 발생했습니다.";
@@ -110,6 +119,7 @@ export function FakeEvidenceModal({ activeCase, userId, onClose, onEvidenceSelec
             setSubmitting(false);
         }
     };
+
 
     const trueEvidences = evidences.filter(e => !e.isFakeCandidate);
     const fakeEvidences = evidences.filter(e => e.isFakeCandidate);
@@ -143,7 +153,7 @@ export function FakeEvidenceModal({ activeCase, userId, onClose, onEvidenceSelec
                                 <h3 className="text-lg font-semibold text-green-700 mb-3">✅ 원래 증거 (3개)</h3>
                                 <div className="space-y-2">
                                     {trueEvidences.map((e) => (
-                                        <Card key={e.id} className="p-3 bg-green-50 border-green-200">
+                                        <Card key={e.evidenceId} className="p-3 bg-green-50 border-green-200">
                                             <p className="text-sm text-green-800">{e.description}</p>
                                         </Card>
                                     ))}
@@ -157,9 +167,9 @@ export function FakeEvidenceModal({ activeCase, userId, onClose, onEvidenceSelec
                                 <div className="space-y-2">
                                     {fakeEvidences.map((e) => (
                                         <Card 
-                                            key={e.id} 
+                                            key={e.evidenceId} 
                                             className={`p-3 cursor-pointer transition-all ${
-                                                selectedFakeEvidence?.id === e.id 
+                                                selectedFakeEvidence?.evidenceId === e.evidenceId 
                                                     ? 'ring-2 ring-red-500 bg-red-100' 
                                                     : 'hover:bg-gray-50'
                                             }`}

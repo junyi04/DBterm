@@ -84,31 +84,15 @@ export function CulpritDashboard({ user, onLogout, onShowRanking }: CulpritDashb
 
     // 🚨 3. 범인으로 사건에 참여 요청
     const handleJoinCase = async (caseItem: AvailableCase) => {
-        console.log("범인 참여 요청 데이터:", { caseId: caseItem.caseId, culpritId: user.id });
-        try {
-            // 1. POST /api/cases/culprit/join 호출 (참여 요청)
-            await apiClient.post('/cases/culprit/join', {
-                caseId: caseItem.caseId,
-                culpritId: user.id,
-            });
-
-            toast.success(`'${caseItem.caseTitle}' 사건에 범인으로 참여했습니다. 이제 증거를 조작하세요.`);
-            
-            // 2. 참여 성공 후, 바로 증거 조작 모달을 띄우기 위해 selectedCase 상태 업데이트
-            setSelectedCase(caseItem); 
-
-            fetchAvailableCases(); // 목록 갱신 (선택한 사건이 사라짐)
-            // fetchMyCases()는 handleEvidenceSelected에서 호출되도록 유지하거나 여기서도 호출 가능
-            
-        } catch (err: any) {
-            const errorMessage = err.response?.data?.error || "참여 요청 중 서버 오류가 발생했습니다.";
-            toast.error(errorMessage);
-        }
+        // ❗ join은 하지 않는다 — 조작 완료 시에만 DB에 반영됨
+        setSelectedCase(caseItem);
     };
 
     // 증거 조작 모달을 닫고 목록을 갱신 (참여 목록만 갱신)
     const handleEvidenceSelected = () => {
         setSelectedCase(null);
+        fetchAvailableCases();
+
         fetchMyCases(); // 🚨 조작 완료 후 '내가 참여한 사건' 목록 갱신
     };
 
