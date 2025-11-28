@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface CaseParticipationRepository extends CrudRepository<CaseParticipation, Long> {
     List<CaseParticipation> findAllByClientId(Long clientId);
     Optional<CaseParticipation> findByCaseId(Long caseId);
+    List<CaseParticipation> findAllByCriminalId(Long criminalId);
 }

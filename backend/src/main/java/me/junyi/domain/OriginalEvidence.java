@@ -1,7 +1,9 @@
 package me.junyi.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 @Data
@@ -13,6 +15,12 @@ public class OriginalEvidence {
 
     private Long caseId;
     private String description;
-    private Boolean isTrue; // 진짜 증거 여부
-    private Boolean isFakeCandidate; // 거짓 증거 후보 여부
+
+    @Column("is_true")
+    @JsonProperty("isTrue")
+    private Boolean isTrue;
+
+    @Column("is_fake_candidate")
+    @JsonProperty("isFakeCandidate")
+    private Boolean isFakeCandidate;
 }

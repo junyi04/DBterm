@@ -3,12 +3,14 @@ package me.junyi.service;
 import me.junyi.domain.*;
 import me.junyi.dto.CaseClientDto;
 import me.junyi.dto.CaseDetectiveDto;
+import me.junyi.dto.MyCaseDto;
 import me.junyi.repository.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map; // Map 추가
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -45,52 +47,65 @@ public class CaseService {
     // ... (JdbcTemplate을 사용하는 getClientCases 메서드는 이전에 구현되어 있다고 가정) ...
 
 
-    /** 2. 범인의 증거 조작 처리 (CRIMINAL_ID 등록, 증거 구성, STATUS='조작') */
+    /** 2. 범인의 증거 조작 처리 (CRIMINAL_ID는 여기서 건드리지 않음) */
     @Transactional
     public CaseInfo handleCriminalAction(Long caseId, Long criminalId, String fakeEvidenceDescription) {
-        // A. 참여 정보 업데이트 (CRIMINAL_ID 등록 및 점수 +1)
+
+        // 🚨 1) fakeEvidenceDescription이 비었으면 절대 처리하지 않음
+        if (fakeEvidenceDescription == null || fakeEvidenceDescription.isEmpty()) {
+            throw new IllegalArgumentException("선택한 증거가 없습니다. 조작이 실행되지 않았습니다.");
+        }
+
+        // 2) 참여 정보 가져오기 (하지만 criminalId 저장 금지!)
         CaseParticipation participation = participationRepository.findByCaseId(caseId)
                 .orElseThrow(() -> new IllegalArgumentException("참여 레코드가 없습니다."));
 
-        participation.setCriminalId(criminalId);
-        participationRepository.save(participation);
+        // ❌ 삭제됨: criminalId 저장
+        // participation.setCriminalId(criminalId);
+        // participationRepository.save(participation);
 
-        AppUser criminal = appUserRepository.findById(criminalId).orElseThrow();
-        criminal.setScore(criminal.getScore() + 1);
-        appUserRepository.save(criminal);
+        // ❌ 삭제됨: 범인 초기 점수 +1
+        // AppUser criminal = appUserRepository.findById(criminalId).orElseThrow();
+        // criminal.setScore(criminal.getScore() + 1);
+        // appUserRepository.save(criminal);
 
-        // 🚨 SCORE_LOG 기록 (범인 초기 점수 +1)
-        ScoreLog log = ScoreLog.builder()
-                .userId(criminalId)
-                .caseId(caseId)
-                .scoreChange(1)
-                .reason("범인 지정 및 증거 조작 (초기 점수)")
-                .build();
-        scoreLogRepository.save(log);
+        // ❌ 삭제됨: ScoreLog 기록
+        // ScoreLog log = ScoreLog.builder()
+        //         .userId(criminalId)
+        //         .caseId(caseId)
+        //         .scoreChange(1)
+        //         .reason("범인 지정 및 증거 조작 (초기 점수)")
+        //         .build();
+        // scoreLogRepository.save(log);
 
-        // B. 제출 증거 구성 (진짜 3개 + 선택된 거짓 1개)
-        List<OriginalEvidence> trueEvidences = originalEvidenceRepository.findByCaseIdAndIsFakeCandidate(caseId, false);
-        OriginalEvidence selectedFake = originalEvidenceRepository.findByCaseIdAndIsFakeCandidate(caseId, true).stream()
-                .filter(e -> e.getDescription().equals(fakeEvidenceDescription))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("선택한 거짓 증거를 찾을 수 없습니다."));
+        // 3) 제출된 증거 구성 (진짜 + 선택된 거짓)
+        List<OriginalEvidence> trueEvidences =
+                originalEvidenceRepository.findByCaseIdAndIsFakeCandidate(caseId, false);
 
+        OriginalEvidence selectedFake =
+                originalEvidenceRepository.findByCaseIdAndIsFakeCandidate(caseId, true).stream()
+                        .filter(e -> e.getDescription().equals(fakeEvidenceDescription))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("선택한 거짓 증거를 찾을 수 없습니다."));
+
+        // 기존 제출 증거 삭제
         submittedEvidenceRepository.deleteAll(submittedEvidenceRepository.findAllByCaseId(caseId));
 
-        // SubmittedEvidence 도메인 객체가 없으므로, 편의상 OriginalEvidence의 getIsTrue()를 사용한다고 가정
+        // 새 증거 목록 구성
         List<SubmittedEvidence> submittedList = trueEvidences.stream()
-                .map(e -> new SubmittedEvidence(null, e.getCaseId(), e.getDescription(), true)) // 진짜 증거는 TRUE로 설정
+                .map(e -> new SubmittedEvidence(null, e.getCaseId(), e.getDescription(), true))
                 .collect(Collectors.toList());
 
-        submittedList.add(new SubmittedEvidence(null, selectedFake.getCaseId(), selectedFake.getDescription(), false)); // 거짓 증거는 FALSE로 설정
+        submittedList.add(new SubmittedEvidence(null, selectedFake.getCaseId(), selectedFake.getDescription(), false));
 
         submittedEvidenceRepository.saveAll(submittedList);
 
-        // C. 사건 상태 업데이트
+        // 4) 사건 상태 업데이트 → 조작 완료 시에만 변경
         CaseInfo caseInfo = caseInfoRepository.findById(caseId).orElseThrow();
         caseInfo.setStatus("조작");
         return caseInfoRepository.save(caseInfo);
     }
+
 
     /** 3. 경찰의 탐정 배정 및 상태 변경 처리 (POLICE_ID, DETECTIVE_ID 등록, STATUS='배정') */
     @Transactional
@@ -209,10 +224,38 @@ public class CaseService {
     }
 
     // 9. 범인 - 참여한 사건 조회
-    public List<CaseInfo> getCasesByCulpritId(Long culpritId) {
-        // TODO: CaseParticipation과 CaseInfo를 조인하여 culpritId가 일치하는 사건을 CaseInfo로 반환하는 로직 구현 필요
-        return List.of(); // 임시 반환
+    // 9. 범인 - 내가 참여한 사건 조회 (MyCaseDto)
+    public List<MyCaseDto> getCulpritMyCases(Long culpritId) {
+
+        List<CaseParticipation> participations =
+                participationRepository.findAllByCriminalId(culpritId);
+
+        return participations.stream()
+                .map(p -> {
+                    CaseInfo info = caseInfoRepository.findById(p.getCaseId()).orElse(null);
+                    if (info == null) return null;
+
+                    boolean fakeSelected = "조작".equals(info.getStatus());
+
+                    return MyCaseDto.builder()
+                            .caseId(info.getCaseId())
+                            .activeId(p.getPartId())
+                            .caseTitle(info.getTitle())
+                            .caseDescription(info.getContent())
+                            .clientNickname(
+                                    appUserRepository.findById(p.getClientId())
+                                            .map(AppUser::getNickname)
+                                            .orElse("미정")
+                            )
+                            .difficulty(info.getDifficulty())
+                            .status(info.getStatus())
+                            .fakeEvidenceSelected(fakeSelected)
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
+
 
     /** 10. 의뢰인 - 사건 의뢰 처리 (CaseParticipation 생성) */
     @Transactional
