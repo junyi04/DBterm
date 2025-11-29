@@ -148,15 +148,88 @@ public class CaseService {
 
     /** 4. 탐정 - 배정된 사건 조회 (STATUS='배정') */
     public List<CaseDetectiveDto> getAssignedCasesByDetectiveId(Long detectiveId) {
-        // TODO: CaseParticipation과 CaseInfo를 조인하여 detectiveId와 status='배정'인 레코드를 찾고 CaseDetectiveDto로 변환하는 로직 구현 필요
-        return List.of(); // 임시 반환
+
+        // 1) CaseParticipation 중 탐정 ID가 내가 맞는 참여 찾기
+        List<CaseParticipation> participations =
+                participationRepository.findAllByDetectiveId(detectiveId);
+
+        return participations.stream()
+                .map(p -> {
+                    CaseInfo info = caseInfoRepository.findById(p.getCaseId()).orElse(null);
+                    if (info == null) return null;
+
+                    // STATUS='배정' 상태인 사건만 탐정에게 보여야 함
+                    if (!"배정".equals(info.getStatus())) return null;
+
+                    // 경찰/의뢰인 닉네임
+                    String clientNickname = appUserRepository.findById(p.getClientId())
+                            .map(AppUser::getNickname).orElse("미정");
+
+                    String policeNickname = appUserRepository.findById(p.getPoliceId())
+                            .map(AppUser::getNickname).orElse("미정");
+
+                    return CaseDetectiveDto.builder()
+                            .activeId(p.getPartId())
+                            .caseId(info.getCaseId())
+                            .caseTitle(info.getTitle())
+                            .caseDescription(info.getContent())
+                            .difficulty(info.getDifficulty())
+                            .clientNickname(clientNickname)
+                            .policeNickname(policeNickname)
+                            .status(info.getStatus())       // '배정'
+                            .culpritGuess(null)            // 아직 추리 전
+                            .result(null)                  // 결과 없음
+                            .actualCulprit(null)           // 결과 없음
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
-    /** 5. 탐정 - 완료된 사건 결과 조회 (STATUS='결과 확인') */
+
+    /** 5. 탐정 - 완료된 사건 조회 (STATUS='결과 확인') */
     public List<CaseDetectiveDto> getCompletedCasesByDetectiveId(Long detectiveId) {
-        // TODO: CaseParticipation과 CaseInfo, CaseResult를 조인하여 status='결과 확인'인 레코드를 찾고 DTO로 변환하는 로직 구현 필요
-        return List.of(); // 임시 반환
+
+        List<CaseParticipation> participations =
+                participationRepository.findAllByDetectiveId(detectiveId);
+
+        return participations.stream()
+                .map(p -> {
+                    CaseInfo info = caseInfoRepository.findById(p.getCaseId()).orElse(null);
+                    if (info == null) return null;
+
+                    // 🚨 STATUS = '결과 확인'만
+                    if (!"결과 확인".equals(info.getStatus())) return null;
+
+                    String clientNickname = appUserRepository.findById(p.getClientId())
+                            .map(AppUser::getNickname).orElse("미정");
+
+                    String policeNickname = appUserRepository.findById(p.getPoliceId())
+                            .map(AppUser::getNickname).orElse("미정");
+
+                    return CaseDetectiveDto.builder()
+                            .activeId(p.getPartId())
+                            .caseId(info.getCaseId())
+                            .caseTitle(info.getTitle())
+                            .caseDescription(info.getContent())
+                            .difficulty(info.getDifficulty())
+                            .clientNickname(clientNickname)
+                            .policeNickname(policeNickname)
+                            .status(info.getStatus())
+                            .culpritGuess(p.getDetectiveGuessId() != null ?
+                                    appUserRepository.findById(p.getDetectiveGuessId())
+                                            .map(AppUser::getNickname).orElse("미정")
+                                    : null)
+                            .result(p.getIsSolved() != null ?
+                                    (p.getIsSolved() ? "감사" : "부고") : null)
+                            .actualCulprit(appUserRepository.findById(info.getTrueCriminalId())
+                                    .map(AppUser::getNickname).orElse("미정"))
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
+
 
     /** 6. 의뢰인 - 의뢰한 사건 조회 */
     public List<CaseClientDto> getCasesByClientId(Long clientId) {

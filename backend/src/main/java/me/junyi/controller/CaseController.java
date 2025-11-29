@@ -144,6 +144,16 @@ public class CaseController {
         }
     }
 
+    @GetMapping("/detective/{userId}")
+    public List<CaseDetectiveDto> getAssignedCasesForDetective(@PathVariable Long userId) {
+        return caseService.getAssignedCasesByDetectiveId(userId);
+    }
+
+    @GetMapping("/detective/result/{userId}")
+    public List<CaseDetectiveDto> getCompletedCasesForDetective(@PathVariable Long userId) {
+        return caseService.getCompletedCasesByDetectiveId(userId);
+    }
+
 
 
 
