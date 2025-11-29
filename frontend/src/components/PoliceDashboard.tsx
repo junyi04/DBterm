@@ -61,7 +61,7 @@ export function PoliceDashboard({ user, onLogout, onShowRanking }: PoliceDashboa
         try {
             // POST /api/cases/police/accept 호출 (백엔드에서 경찰 ID 등록 및 상태 변경 처리)
             await apiClient.post('/cases/police/accept', {
-                activeId: caseItem.activeId,
+                caseId: caseItem.caseId,
                 policeId: user.id,
             });
 
@@ -199,7 +199,10 @@ export function PoliceDashboard({ user, onLogout, onShowRanking }: PoliceDashboa
                     caseData={convertToCaseData(selectedCase)}
                     policeId={user.id} // 🚨 경찰 ID 전달
                     onClose={() => setSelectedCase(null)}
-                    onDetectiveAssigned={fetchPendingCases} // 배정 완료 후 목록 갱신
+                    onDetectiveAssigned={() => {
+                        setSelectedCase(null);   // ⭐ 모달 닫기
+                        fetchPendingCases();     // 목록 갱신
+                    }}
                 />
             )}
         </div>
