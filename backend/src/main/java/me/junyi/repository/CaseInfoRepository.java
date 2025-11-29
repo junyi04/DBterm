@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface CaseInfoRepository extends CrudRepository<CaseInfo, Long> {
     List<CaseInfo> findAllByStatus(String status);
     Optional<CaseInfo> findByTitle(String title);
+    List<CaseInfo> findAllByStatusIn(List<String> statuses);
 }

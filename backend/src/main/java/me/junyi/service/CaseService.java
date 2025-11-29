@@ -5,6 +5,7 @@ import me.junyi.dto.AvailableCaseDto;
 import me.junyi.dto.CaseClientDto;
 import me.junyi.dto.CaseDetectiveDto;
 import me.junyi.dto.MyCaseDto;
+import me.junyi.dto.PendingCaseDto;
 import me.junyi.repository.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -333,4 +334,59 @@ public class CaseService {
                 "originalEvidences", allEvidences
         );
     }
+
+    @Transactional
+    public CaseInfo handlePoliceAccept(Long caseId, Long policeId) {
+
+        CaseParticipation participation = participationRepository.findByCaseId(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("참여 레코드를 찾을 수 없습니다."));
+
+        // 경찰 ID 등록
+        participation.setPoliceId(policeId);
+        participationRepository.save(participation);
+
+        // 상태 변경: 조작 → 접수중
+        CaseInfo caseInfo = caseInfoRepository.findById(caseId)
+                .orElseThrow(() -> new IllegalArgumentException("사건을 찾을 수 없습니다."));
+
+        caseInfo.setStatus("접수중");
+        return caseInfoRepository.save(caseInfo);
+    }
+
+    public List<PendingCaseDto> getPendingCasesForPoliceFull() {
+
+        // 조작 또는 접수중 사건 조회
+        List<CaseInfo> caseInfos = caseInfoRepository.findAllByStatusIn(List.of("조작", "접수중"));
+
+        return caseInfos.stream().map(info -> {
+
+            CaseParticipation p = participationRepository.findByCaseId(info.getCaseId())
+                    .orElse(null);
+
+            return PendingCaseDto.builder()
+                    .activeId(p != null ? p.getPartId() : null)
+                    .caseId(info.getCaseId())
+                    .caseTitle(info.getTitle())
+                    .caseDescription(info.getContent())
+                    .difficulty(info.getDifficulty())
+                    .clientNickname(
+                            p != null ? appUserRepository.findById(p.getClientId())
+                                    .map(AppUser::getNickname)
+                                    .orElse("알 수 없음")
+                                    : "알 수 없음"
+                    )
+                    .culpritNickname(
+                            p != null && p.getCriminalId() != null
+                                    ? appUserRepository.findById(p.getCriminalId())
+                                    .map(AppUser::getNickname)
+                                    .orElse("미지정")
+                                    : "미지정"
+                    )
+                    .status(info.getStatus())
+                    .build();
+
+        }).toList();
+    }
+
+
 }
