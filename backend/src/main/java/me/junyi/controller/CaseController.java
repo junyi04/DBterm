@@ -1,10 +1,7 @@
 package me.junyi.controller;
 
 import me.junyi.domain.CaseInfo;
-import me.junyi.dto.AvailableCaseDto;
-import me.junyi.dto.MyCaseDto;
-import me.junyi.dto.CaseClientDto;
-import me.junyi.dto.CaseDetectiveDto;
+import me.junyi.dto.*;
 import me.junyi.service.CaseService;
 
 import org.springframework.http.ResponseEntity;
@@ -82,8 +79,8 @@ public class CaseController {
 
     // 5. 경찰 - 배정 대기 사건 조회
     @GetMapping("/police/pending")
-    public List<CaseInfo> getPendingCases() {
-        return caseService.getPendingCasesForPolice();
+    public List<PendingCaseDto> getPendingCases() {
+        return caseService.getPendingCasesForPoliceFull();
     }
 
     // 6. 의뢰인 - 참여 사건 조회
@@ -129,5 +126,25 @@ public class CaseController {
             return ResponseEntity.internalServerError().body(Map.of("error", "참여 중 DB 오류: " + e.getMessage()));
         }
     }
+
+    @PostMapping("/police/accept")
+    public ResponseEntity<?> acceptCase(@RequestBody Map<String, Long> request) {
+        Long caseId = request.get("caseId");
+        Long policeId = request.get("policeId");
+
+        if (caseId == null || policeId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "caseId와 policeId는 필수입니다."));
+        }
+
+        try {
+            CaseInfo updatedCase = caseService.handlePoliceAccept(caseId, policeId);
+            return ResponseEntity.ok(Map.of("newStatus", updatedCase.getStatus()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+
+
 
 }
