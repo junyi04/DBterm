@@ -1,6 +1,7 @@
 package me.junyi.service;
 
 import me.junyi.domain.*;
+import me.junyi.dto.AvailableCaseDto;
 import me.junyi.dto.CaseClientDto;
 import me.junyi.dto.CaseDetectiveDto;
 import me.junyi.dto.MyCaseDto;
@@ -200,28 +201,35 @@ public class CaseService {
     }
 
     /** 8. 범인 - 조작 참여 가능 사건 조회 (STATUS='등록') */
-    public List<CaseInfo> getAvailableCasesForCulprit() {
-        // 🚨 [JdbcTemplate을 사용한 VIEW 조회로 수정]
-        String sql = "SELECT * FROM available_cases_for_culprit";
+    public List<AvailableCaseDto> getAvailableCasesForCulprit() {
 
-        // JdbcTemplate을 사용하여 뷰에서 CaseInfo 객체 리스트를 가져옵니다.
-        // CaseInfo의 필드와 칼럼 이름이 정확히 일치해야 합니다.
-        return jdbcTemplate.query(sql, (rs, rowNum) -> {
-            CaseInfo info = new CaseInfo();
-            info.setCaseId(rs.getLong("case_id"));
-            info.setTitle(rs.getString("title"));
-            info.setContent(rs.getString("content"));
-            info.setDifficulty(rs.getInt("difficulty"));
-            info.setStatus(rs.getString("status"));
-            // true_criminal_id는 NULL 허용이므로 rs.getObject()나 적절한 NULL 체크가 필요할 수 있습니다.
-            if (rs.getObject("true_criminal_id") != null) {
-                info.setTrueCriminalId(rs.getLong("true_criminal_id"));
-            } else {
-                info.setTrueCriminalId(null);
-            }
-            return info;
-        });
+        String sql = """
+        SELECT 
+            cp.part_id AS active_id,
+            c.case_id,
+            c.title,
+            c.content,
+            c.difficulty,
+            u.nickname AS client_nickname
+        FROM case_participation cp
+        JOIN case_info c ON cp.case_id = c.case_id
+        JOIN app_user u ON cp.client_id = u.user_id
+        WHERE c.status = '등록'
+        AND cp.criminal_id IS NULL
+        """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) ->
+                AvailableCaseDto.builder()
+                        .activeId(rs.getLong("active_id"))
+                        .caseId(rs.getLong("case_id"))
+                        .caseTitle(rs.getString("title"))
+                        .caseDescription(rs.getString("content"))
+                        .difficulty(rs.getInt("difficulty"))
+                        .clientNickname(rs.getString("client_nickname"))
+                        .build()
+        );
     }
+
 
     // 9. 범인 - 참여한 사건 조회
     // 9. 범인 - 내가 참여한 사건 조회 (MyCaseDto)

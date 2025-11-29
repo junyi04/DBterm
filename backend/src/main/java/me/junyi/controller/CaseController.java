@@ -1,6 +1,7 @@
 package me.junyi.controller;
 
 import me.junyi.domain.CaseInfo;
+import me.junyi.dto.AvailableCaseDto;
 import me.junyi.dto.MyCaseDto;
 import me.junyi.dto.CaseClientDto;
 import me.junyi.dto.CaseDetectiveDto;
@@ -93,9 +94,10 @@ public class CaseController {
 
     // 7. 범인 - 참여 가능한 사건 목록
     @GetMapping("/culprit/available")
-    public List<CaseInfo> getAvailableCasesForCulprit() {
+    public List<AvailableCaseDto> getAvailableCasesForCulprit() {
         return caseService.getAvailableCasesForCulprit();
     }
+
 
     // 8. 증거 조작 모달용 상세 조회
     @GetMapping("/culprit/fabricate/details/{caseId}")
